@@ -260,7 +260,9 @@ function AdaptiveCamera({ scrollProgress }) {
   // Smooth out the scroll value so camera movements don't jerk
   useFrame(() => {
     // Spring physics: current + (target - current) * stiffness
-    scrollRef.current += (scrollProgress - scrollRef.current) * 0.05;
+    // scrollProgress is a Framer Motion MotionValue, so we must call .get()
+    const currentScroll = scrollProgress ? scrollProgress.get() : 0;
+    scrollRef.current += (currentScroll - scrollRef.current) * 0.05;
     const smoothScroll = scrollRef.current;
 
     const aspect = size.width / size.height;
