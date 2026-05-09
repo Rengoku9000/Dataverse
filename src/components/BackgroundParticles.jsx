@@ -229,13 +229,11 @@ function AccretionLayer({ count, sizeMultiplier, radiusRange, densityExp, scroll
 
 /* ── Adaptive Camera ───────────────────────────────────────────────────────
    Adjusts camera Z-distance based on viewport aspect ratio so the black hole
-   composition remains fully visible with generous negative space on every
+   composition remains fully visible with GENEROUS negative space on every
    screen — from ultrawide monitors to mobile phones.
 
-   The formula: wider screens → camera pulls further back → more spacious.
-   Tall/narrow screens → camera moves closer → BH stays prominent but not
-   cropped.
-
+   The black hole should feel DISTANT and massive, not close to the camera.
+   Wider screens → camera pulls aggressively further back.
    Uses smooth lerp so the transition feels gravitational, not jumpy.        */
 function AdaptiveCamera() {
   const { camera, size } = useThree();
@@ -243,33 +241,33 @@ function AdaptiveCamera() {
   useFrame(() => {
     const aspect = size.width / size.height;
 
-    // Base Z for a standard 16:9 screen
-    const baseZ = 42;
+    // Base Z for a standard 16:9 screen — much further back than before
+    const baseZ = 58;
 
-    // Aspect ratio scaling:
-    // - ultrawide (21:9, aspect ≈ 2.33): push further back (+8 units)
-    // - standard (16:9, aspect ≈ 1.78): baseZ
-    // - tablet (4:3, aspect ≈ 1.33): slightly closer (-3 units)
-    // - mobile portrait (9:16, aspect ≈ 0.56): closer but not cramped (-8 units)
+    // Aspect ratio scaling — aggressive pullback on wide screens:
+    // - ultrawide (21:9, aspect ≈ 2.33): push WAY further back
+    // - standard (16:9, aspect ≈ 1.78): baseZ ≈ 58
+    // - tablet (4:3, aspect ≈ 1.33): slightly closer
+    // - mobile portrait (9:16, aspect ≈ 0.56): closer but still spacious
     let targetZ;
     if (aspect >= 2.0) {
-      // Ultrawide: generous pullback
-      targetZ = baseZ + (aspect - 2.0) * 10;
+      // Ultrawide: aggressive pullback — +15 units per aspect unit beyond 2.0
+      targetZ = baseZ + (aspect - 2.0) * 15;
     } else if (aspect >= 1.2) {
-      // Desktop/laptop range: smooth interpolation around baseZ
-      targetZ = baseZ + (aspect - 1.78) * 6;
+      // Desktop/laptop range: smooth interpolation
+      targetZ = baseZ + (aspect - 1.78) * 8;
     } else {
-      // Tablet portrait / mobile: pull closer but cap it
-      targetZ = baseZ - (1.2 - aspect) * 8;
-      targetZ = Math.max(targetZ, 28); // never closer than 28
+      // Tablet portrait / mobile: pull closer but floor at 38
+      targetZ = baseZ - (1.2 - aspect) * 12;
+      targetZ = Math.max(targetZ, 38);
     }
 
     // Smooth gravitational lerp — no jumps on resize
     camera.position.z += (targetZ - camera.position.z) * 0.08;
 
-    // Keep Y fixed for consistent framing
+    // Keep XY fixed for consistent framing
     camera.position.x = 0;
-    camera.position.y = 3.5;
+    camera.position.y = 2.0;
 
     camera.updateProjectionMatrix();
   });
@@ -279,14 +277,11 @@ function AdaptiveCamera() {
 
 /* ── Root ───────────────────────────────────────────────────────────────── */
 export default function BackgroundParticles({ scrollProgress, isMobile }) {
-  // Clamp DPR to 1.5 max to prevent zoom amplification on high-DPI screens
-  const maxDpr = 1.5;
-
   return (
     <div className="absolute inset-0" style={{ transform: 'translateZ(0)' }}>
       <Canvas
-        camera={{ position: [0, 3.5, 42], fov: 18, near: 0.1, far: 200 }}
-        dpr={[1, maxDpr]}
+        camera={{ position: [0, 2.0, 58], fov: 22, near: 0.1, far: 300 }}
+        dpr={[1, 1.5]}
         gl={{ antialias: false, powerPreference: 'high-performance' }}
       >
         <color attach="background" args={['#010104']} />
@@ -294,11 +289,14 @@ export default function BackgroundParticles({ scrollProgress, isMobile }) {
         {/* Responsive camera controller */}
         <AdaptiveCamera />
 
-        {/* Cosmic starfield — restores the "vast and quiet" feeling */}
+        {/* Cosmic starfield — vast and quiet feeling (NOT affected by group scale) */}
         <StarField />
 
-        {/* All black hole geometry in a single repositioned group */}
-        <group position={[0, 3.5, 0]}>
+        {/* All black hole geometry scaled down 40% — occupies ~25-30% of viewport.
+            The scale prop reduces ALL child geometry proportionally without
+            touching any shader math. Position Y=2.0 to center the scaled
+            composition slightly above viewport mid-point. */}
+        <group position={[0, 2.0, 0]} scale={0.6}>
 
           {/* Volumetric haze — sits behind the sphere */}
           <GravitationalHaze scrollProgress={scrollProgress} />
@@ -359,4 +357,5 @@ export default function BackgroundParticles({ scrollProgress, isMobile }) {
     </div>
   );
 }
+
 

@@ -169,19 +169,18 @@ export const StarFieldMaterial = shaderMaterial(
       // Transform star into camera (view) space
       vec4 starView = modelViewMatrix * vec4(dPos, 1.0);
 
-      // Black hole world position = (0, 3.5, 0) transformed into view space
-      vec4 bhView = viewMatrix * vec4(0.0, 3.5, 0.0, 1.0);
+      // Black hole world position = (0, 2.0, 0) transformed into view space
+      vec4 bhView = viewMatrix * vec4(0.0, 2.0, 0.0, 1.0);
 
       // 2D angular offset between star and BH in camera-plane (XY)
       vec2 offset = starView.xy - bhView.xy;
       float dist  = length(offset);
 
       // Schwarzschild-inspired lensing: deflect stars near the BH sight-line outward.
-      // Only affects stars within ~12 view-space units. Uses 1/r to mimic 1/b physics.
-      // The deflect is small enough to be cinematic, not obviously warped.
-      if (dist > 0.4 && dist < 12.0) {
-        float deflect = 1.8 / dist;          // ~Schwarzschild 1/b
-        deflect       = min(deflect, 2.8);   // cap: no infinite warping
+      // Reduced deflection to match the 40% smaller visual BH size.
+      if (dist > 0.3 && dist < 8.0) {
+        float deflect = 1.1 / dist;          // ~Schwarzschild 1/b, scaled down
+        deflect       = min(deflect, 1.8);   // cap
         starView.xy  += normalize(offset) * deflect;
       }
 
