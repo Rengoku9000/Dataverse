@@ -10,7 +10,7 @@ extend({ BlackHoleMaterial, PhotonRingMaterial, HazeMaterial, StarFieldMaterial 
 /* ── Starfield with Gravitational Lensing ──────────────────────────────────
    Background stars that appear to bend around the black hole sight-line,
    plus an imperceptibly slow cosmic drift so the field never feels frozen.   */
-function StarField({ scrollProgress }) {
+function StarField({ scrollProgress, scrollVelocity }) {
   const matRef = useRef();
   const COUNT  = 1800;
 
@@ -29,11 +29,14 @@ function StarField({ scrollProgress }) {
 
   useEffect(() => {
     if (!scrollProgress) return;
-    const unsub = scrollProgress.on('change', v => {
+    const unsubP = scrollProgress.on('change', v => {
       if (matRef.current) matRef.current.uScroll = v;
     });
-    return () => unsub();
-  }, [scrollProgress]);
+    const unsubV = scrollVelocity ? scrollVelocity.on('change', v => {
+      if (matRef.current) matRef.current.uVelocity = v;
+    }) : () => {};
+    return () => { unsubP(); unsubV(); };
+  }, [scrollProgress, scrollVelocity]);
 
   // Tick uTime — drives the slow drift + lensing is auto-updated via viewMatrix
   useFrame(({ clock }) => {
@@ -57,16 +60,19 @@ function StarField({ scrollProgress }) {
 /* ── Gravitational Haze ─────────────────────────────────────────────────────
    A large plane facing the camera, behind the black hole, with a warm radial
    glow. Creates the sense of volumetric scattered light / accretion energy.  */
-function GravitationalHaze({ scrollProgress }) {
+function GravitationalHaze({ scrollProgress, scrollVelocity }) {
   const matRef = useRef();
 
   useEffect(() => {
     if (!scrollProgress) return;
-    const unsub = scrollProgress.on('change', v => {
+    const unsubP = scrollProgress.on('change', v => {
       if (matRef.current) matRef.current.uScroll = v;
     });
-    return () => unsub();
-  }, [scrollProgress]);
+    const unsubV = scrollVelocity ? scrollVelocity.on('change', v => {
+      if (matRef.current) matRef.current.uVelocity = v;
+    }) : () => {};
+    return () => { unsubP(); unsubV(); };
+  }, [scrollProgress, scrollVelocity]);
 
   useFrame(({ clock }) => {
     if (matRef.current) matRef.current.uTime = clock.elapsedTime;
@@ -119,19 +125,23 @@ function EventHorizon() {
 /* ── Photon Sphere ──────────────────────────────────────────────────────────
    Non-uniform glowing ring using the PhotonRingMaterial shader.
    Two rings: a razor inner (bright) and a soft outer halo (dim).             */
-function PhotonSphere({ scrollProgress }) {
+function PhotonSphere({ scrollProgress, scrollVelocity }) {
   const innerRef = useRef();
   const outerRef = useRef();
   const hazeRef  = useRef();
 
   useEffect(() => {
     if (!scrollProgress) return;
-    const unsub = scrollProgress.on('change', v => {
+    const unsubP = scrollProgress.on('change', v => {
       if (innerRef.current) innerRef.current.material.uScroll = v;
       if (outerRef.current) outerRef.current.material.uScroll = v;
     });
-    return () => unsub();
-  }, [scrollProgress]);
+    const unsubV = scrollVelocity ? scrollVelocity.on('change', v => {
+      if (innerRef.current) innerRef.current.material.uVelocity = v;
+      if (outerRef.current) outerRef.current.material.uVelocity = v;
+    }) : () => {};
+    return () => { unsubP(); unsubV(); };
+  }, [scrollProgress, scrollVelocity]);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
@@ -174,7 +184,7 @@ function PhotonSphere({ scrollProgress }) {
 /* ── Accretion Layer ────────────────────────────────────────────────────────
    Reusable particle layer. densityExp controls particle distribution:
    higher = more concentrated near the inner edge.                            */
-function AccretionLayer({ count, sizeMultiplier, radiusRange, densityExp, scrollProgress, isMobile }) {
+function AccretionLayer({ count, sizeMultiplier, radiusRange, densityExp, scrollProgress, scrollVelocity, isMobile }) {
   const matRef = useRef();
   const { mouse } = useThree();
   const spring = useMemo(() => new THREE.Vector3(), []);
@@ -208,11 +218,15 @@ function AccretionLayer({ count, sizeMultiplier, radiusRange, densityExp, scroll
   }, [n, radiusRange, densityExp]);
 
   useEffect(() => {
-    const unsub = scrollProgress.on('change', v => {
+    if (!scrollProgress) return;
+    const unsubP = scrollProgress.on('change', v => {
       if (matRef.current) matRef.current.uScroll = v;
     });
-    return () => unsub();
-  }, [scrollProgress]);
+    const unsubV = scrollVelocity ? scrollVelocity.on('change', v => {
+      if (matRef.current) matRef.current.uVelocity = v;
+    }) : () => {};
+    return () => { unsubP(); unsubV(); };
+  }, [scrollProgress, scrollVelocity]);
 
   useFrame(({ clock }) => {
     if (!matRef.current) return;
@@ -256,21 +270,24 @@ function AccretionLayer({ count, sizeMultiplier, radiusRange, densityExp, scroll
 function AdaptiveCamera({ scrollProgress }) {
   const { camera, size } = useThree();
   const scrollRef = useRef(0);
+  const timeRef = useRef(0);
 
   // Smooth out the scroll value so camera movements don't jerk
-  useFrame(() => {
+  useFrame((state, delta) => {
     // Spring physics: current + (target - current) * stiffness
     // scrollProgress is a Framer Motion MotionValue, so we must call .get()
     const currentScroll = scrollProgress ? scrollProgress.get() : 0;
     scrollRef.current += (currentScroll - scrollRef.current) * 0.05;
     const smoothScroll = scrollRef.current;
 
-    const aspect = size.width / size.height;
+    // Accumulate time for microscopic space drift
+    timeRef.current += delta;
+    const t = timeRef.current;
 
-    // Base Z for a standard 16:9 screen — much further back than before
+    // Base Z for the frontal view (scroll = 1.0)
     const baseZ = 58;
 
-    // Aspect ratio scaling
+    // Aspect ratio scaling for the final frontal view
     let targetZ;
     if (aspect >= 2.0) {
       targetZ = baseZ + (aspect - 2.0) * 15;
@@ -281,24 +298,39 @@ function AdaptiveCamera({ scrollProgress }) {
       targetZ = Math.max(targetZ, 38);
     }
 
-    // SCROLL EFFECT: As user scrolls down, pull camera forward and slightly down
-    // This creates the feeling of falling into the gravity well.
-    // targetZ reduces by up to 15 units at full scroll.
-    const scrollZOffset = smoothScroll * 15.0;
-    // targetY dips by up to 3 units at full scroll.
-    const scrollYOffset = smoothScroll * 3.0;
+    /* ── Cinematic Orbital Descent ──
+       Start (scroll=0): Camera is high up (Y=22), looking down.
+       End (scroll=1): Camera is front-facing (Y=2.0), looking straight. */
+    const startY = 22.0;
+    const endY = 2.0;
+    
+    // Smooth cosine interpolation for the orbital arc (ease-in-out feel)
+    // When smoothScroll=0 -> cos(0)=1 -> t=0
+    // When smoothScroll=1 -> cos(PI)= -1 -> t=1
+    const arcT = (1.0 - Math.cos(smoothScroll * Math.PI)) * 0.5;
 
-    targetZ -= scrollZOffset;
+    // Interpolate Y
+    const currentY = startY + (endY - startY) * arcT;
+
+    // For Z, we start slightly closer (since we are high up) and orbit outward to the baseZ
+    // This creates a spherical sweep rather than a linear diagonal drop.
+    const startZ = targetZ * 0.5; 
+    const currentZ = startZ + (targetZ - startZ) * Math.sin(smoothScroll * Math.PI * 0.5);
+
+    /* ── Microscopic Idle Drift (Space Inertia) ── */
+    // Extremely slow, imperceptible floating motion
+    const driftX = Math.sin(t * 0.2) * 0.8;
+    const driftY = Math.cos(t * 0.15) * 0.6;
+    const driftZ = Math.sin(t * 0.1) * 1.2;
 
     // Smooth gravitational lerp — no jumps on resize
-    camera.position.z += (targetZ - camera.position.z) * 0.08;
+    camera.position.x += ((0 + driftX) - camera.position.x) * 0.08;
+    camera.position.y += ((currentY + driftY) - camera.position.y) * 0.08;
+    camera.position.z += ((currentZ + driftZ) - camera.position.z) * 0.08;
 
-    // Keep X fixed
-    camera.position.x = 0;
-
-    // Smooth Y descent
-    const targetY = 2.0 - scrollYOffset;
-    camera.position.y += (targetY - camera.position.y) * 0.08;
+    // Lock camera focus perfectly on the singularity center.
+    // As the camera descends, this forces the background parallax to rotate naturally.
+    camera.lookAt(0, 2.0, 0);
 
     camera.updateProjectionMatrix();
   });
@@ -307,11 +339,11 @@ function AdaptiveCamera({ scrollProgress }) {
 }
 
 /* ── Root ───────────────────────────────────────────────────────────────── */
-export default function BackgroundParticles({ scrollProgress, isMobile }) {
+export default function BackgroundParticles({ scrollProgress, scrollVelocity, isMobile }) {
   return (
     <div className="absolute inset-0" style={{ transform: 'translateZ(0)' }}>
       <Canvas
-        camera={{ position: [0, 2.0, 58], fov: 22, near: 0.1, far: 300 }}
+        camera={{ position: [0, 22.0, 30], fov: 22, near: 0.1, far: 300 }}
         dpr={[1, 1.5]}
         gl={{ antialias: false, powerPreference: 'high-performance' }}
       >
@@ -321,7 +353,7 @@ export default function BackgroundParticles({ scrollProgress, isMobile }) {
         <AdaptiveCamera scrollProgress={scrollProgress} />
 
         {/* Cosmic starfield — vast and quiet feeling (NOT affected by group scale) */}
-        <StarField scrollProgress={scrollProgress} />
+        <StarField scrollProgress={scrollProgress} scrollVelocity={scrollVelocity} />
 
         {/* All black hole geometry scaled down 40% — occupies ~25-30% of viewport.
             The scale prop reduces ALL child geometry proportionally without
@@ -330,7 +362,7 @@ export default function BackgroundParticles({ scrollProgress, isMobile }) {
         <group position={[0, 2.0, 0]} scale={0.6}>
 
           {/* Volumetric haze — sits behind the sphere */}
-          <GravitationalHaze scrollProgress={scrollProgress} />
+          <GravitationalHaze scrollProgress={scrollProgress} scrollVelocity={scrollVelocity} />
 
           {/* The perfectly black core — occluder for everything behind it */}
           <EventHorizon />
@@ -339,37 +371,40 @@ export default function BackgroundParticles({ scrollProgress, isMobile }) {
           <EventHorizonEdge />
 
           {/* Glowing photon ring with brightness asymmetry */}
-          <PhotonSphere scrollProgress={scrollProgress} />
+          <PhotonSphere scrollProgress={scrollProgress} scrollVelocity={scrollVelocity} />
 
           {/* ── Three particle depth layers ── */}
 
-          {/* Innermost: ultra-dense, slow, time-dilated */}
+          {/* Innermost: ultra-dense, prominent, time-dilated */}
           <AccretionLayer
             count={4000}
-            sizeMultiplier={0.65}
+            sizeMultiplier={1.2}
             radiusRange={[3.02, 7.5]}
             densityExp={5.0}
             scrollProgress={scrollProgress}
+            scrollVelocity={scrollVelocity}
             isMobile={isMobile}
           />
 
           {/* Mid disk: main visual orbital band */}
           <AccretionLayer
             count={3000}
-            sizeMultiplier={1.0}
+            sizeMultiplier={1.4}
             radiusRange={[6, 14]}
             densityExp={3.0}
             scrollProgress={scrollProgress}
+            scrollVelocity={scrollVelocity}
             isMobile={isMobile}
           />
 
-          {/* Outer dust haze: sparse, cinematic breathing room */}
+          {/* Outer dust haze: sparse, faint, cinematic breathing room */}
           <AccretionLayer
             count={700}
-            sizeMultiplier={2.2}
+            sizeMultiplier={0.8}
             radiusRange={[12, 26]}
             densityExp={1.5}
             scrollProgress={scrollProgress}
+            scrollVelocity={scrollVelocity}
             isMobile={isMobile}
           />
         </group>

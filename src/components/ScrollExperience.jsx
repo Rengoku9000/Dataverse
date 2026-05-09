@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import Lenis from 'lenis';
-import { motion, useScroll, useSpring } from 'framer-motion';
+import { motion, useScroll, useSpring, useVelocity } from 'framer-motion';
 import { ScrollTimeline } from '../lib/MotionTokens';
 
 // Import Scenes
@@ -50,6 +50,12 @@ export default function ScrollExperience() {
     offset: ['start start', 'end end']
   });
 
+  const scrollVelocity = useVelocity(scrollYProgress);
+  const smoothVelocity = useSpring(scrollVelocity, {
+    damping: 50,
+    stiffness: 400
+  });
+
   // VERY selective use of spring for global background / lighting
   // We DO NOT use this on every UI element, just on the large background shifts
   const globalProgress = useSpring(scrollYProgress, {
@@ -64,7 +70,7 @@ export default function ScrollExperience() {
     <div ref={containerRef} style={{ height: timelineHeight }} className="relative w-full bg-background">
       {/* Background stays completely fixed */}
       <div className="fixed inset-0 z-0 pointer-events-none">
-        <BackgroundParticles scrollProgress={globalProgress} isMobile={isMobile} />
+        <BackgroundParticles scrollProgress={globalProgress} scrollVelocity={smoothVelocity} isMobile={isMobile} />
       </div>
 
       {/* The sticky viewport that renders scenes in place */}

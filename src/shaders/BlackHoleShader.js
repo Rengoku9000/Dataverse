@@ -13,6 +13,7 @@ export const BlackHoleMaterial = shaderMaterial(
     uPixelRatio: 1.0,
     uSizeMultiplier: 1.0,
     uEventHorizonRadius: 3.0,
+    uVelocity: 0,
   },
   /* ── VERTEX SHADER ─────────────────────────────────────────────────── */
   `
@@ -22,6 +23,7 @@ export const BlackHoleMaterial = shaderMaterial(
     uniform float uPixelRatio;
     uniform float uSizeMultiplier;
     uniform float uEventHorizonRadius;
+    uniform float uVelocity;
 
     attribute float aScale;
     attribute float aRandomness;
@@ -57,7 +59,11 @@ export const BlackHoleMaterial = shaderMaterial(
          At full scroll, inner particles run ~2.5× faster, outer ~1.5×.
          This creates the feeling of increasing gravitational pressure. */
       float scrollAccel = 1.0 + uScroll * mix(1.5, 0.5, timeW);
-      float speed = baseSpeed * scrollAccel;
+      
+      /* Scroll Velocity Physics: fast scroll adds a temporary momentum spike */
+      float momentumSpike = abs(uVelocity) * 0.08;
+      
+      float speed = baseSpeed * scrollAccel + momentumSpike;
 
       float currAngle = aAngle - uTime * speed;
 
@@ -78,11 +84,14 @@ export const BlackHoleMaterial = shaderMaterial(
       /* Tiny radial pulse (spacetime contracting/expanding feel) */
       float radialPulse = sin(uTime * 0.055 + seed * 2.3) * 0.055;
 
+      /* Velocity physical flutter: particles shake slightly under fast momentum */
+      float flutter = sin(uTime * 4.0 + seed * 5.0) * abs(uVelocity) * 0.03;
+
       /* Gravitational compression: scroll tightens orbits toward the event horizon.
          At full scroll, orbits compress ~15% inward. Outer particles compress
          more than inner (they have more room to fall). */
       float scrollCompress = mix(1.0, 0.85, uScroll * smoothstep(0.0, 0.6, normR));
-      float r = (aRadius + radialPulse) * scrollCompress;
+      float r = (aRadius + radialPulse + flutter) * scrollCompress;
 
       /* Inclined orbit: Y component from inclination + Z slightly foreshortened */
       float sinI = sin(inclination);
@@ -184,6 +193,7 @@ export const BlackHoleMaterial = shaderMaterial(
     uniform vec3  uColorAccent;
     uniform float uEventHorizonRadius;
     uniform float uScroll;
+    uniform float uVelocity;
 
     varying float vAlpha;
     varying float vDistance;
@@ -193,7 +203,8 @@ export const BlackHoleMaterial = shaderMaterial(
     void main() {
       float d = distance(gl_PointCoord, vec2(0.5));
       if (d > 0.5) discard;
-      float alpha = smoothstep(0.5, 0.07, d);
+      // Soften the edge falloff so particles feel more volumetric/glowing, less dot-like
+      float alpha = smoothstep(0.5, 0.15, d);
 
       /* Color bands: white rim → warm orange → dark amber */
       float t  = smoothstep(uEventHorizonRadius, uEventHorizonRadius + 11.0, vDistance);
@@ -212,6 +223,10 @@ export const BlackHoleMaterial = shaderMaterial(
       float rim = 1.0 - smoothstep(uEventHorizonRadius, uEventHorizonRadius + 0.6, vDistance);
       float rimIntensity = 2.2 + uScroll * 1.8;  // up to 4.0 at full scroll
       col += col * rim * rimIntensity;
+
+      /* Velocity Flash: rapid scrolling temporarily heats up the plasma */
+      float velHeat = abs(uVelocity) * 0.4 * (1.0 - smoothstep(0.0, 2.0, vDistance - uEventHorizonRadius));
+      col += vec3(velHeat * 1.2, velHeat * 0.8, velHeat * 0.4);
 
       /* Scroll shifts inner particles HOTTER (whiter), not cooler.
          Creates the feeling of increasing accretion energy. */

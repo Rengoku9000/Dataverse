@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // ─── Photon Ring Shader ──────────────────────────────────────────────────────
 // Three independent noise layers — "feels organic" vs "mathematically generated"
 export const PhotonRingMaterial = shaderMaterial(
-  { uTime: 0, uScroll: 0 },
+  { uTime: 0, uScroll: 0, uVelocity: 0 },
   /* vertex */
   `
     varying float vAngle;
@@ -18,6 +18,7 @@ export const PhotonRingMaterial = shaderMaterial(
   `
     uniform float uTime;
     uniform float uScroll;
+    uniform float uVelocity;
     varying float vAngle;
 
     // Two independent hash functions to prevent pattern repetition
@@ -50,7 +51,11 @@ export const PhotonRingMaterial = shaderMaterial(
          Simulates the ring destabilising under increasing gravitational stress. */
       float scrollEnergy = 1.0 + uScroll * 0.35;  // up to 35% brighter
       float scrollTurb   = 1.0 + uScroll * 2.5;   // turbulence amplitude 2.5×
-      brightness = brightness * scrollEnergy + micro * scrollTurb;
+      
+      /* Velocity Physics: Fast scrolling creates temporary instability spikes */
+      float velTurb = abs(uVelocity) * 1.5;
+
+      brightness = brightness * scrollEnergy + micro * (scrollTurb + velTurb) + velTurb * 0.15;
       brightness = clamp(brightness, 0.50, 1.5);
 
       // ── Relativistic Doppler + Interstellar bottom-brightening ──
@@ -84,7 +89,7 @@ export const PhotonRingMaterial = shaderMaterial(
 // Warm volumetric atmospheric glow behind the singularity.
 // Deliberately off-center and angularly asymmetric — NOT a spotlight.
 export const HazeMaterial = shaderMaterial(
-  { uTime: 0, uScroll: 0 },
+  { uTime: 0, uScroll: 0, uVelocity: 0 },
   `
     varying vec2 vUv;
     void main() {
@@ -95,6 +100,7 @@ export const HazeMaterial = shaderMaterial(
   `
     uniform float uTime;
     uniform float uScroll;
+    uniform float uVelocity;
     varying vec2 vUv;
 
     float hash(float n) { return fract(sin(n) * 43758.5453); }
@@ -144,6 +150,10 @@ export const HazeMaterial = shaderMaterial(
       );
 
       float alpha = glow * angVar * cloudNoise * directional * 0.16 * (1.0 - uScroll * 0.5);
+      
+      /* Velocity flutter: hazy ring glows slightly when scrolling fast */
+      alpha += abs(uVelocity) * 0.05 * glow;
+      
       alpha = clamp(alpha, 0.0, 0.18);
 
       gl_FragColor = vec4(col, alpha);
@@ -156,11 +166,12 @@ export const HazeMaterial = shaderMaterial(
 // starfield, bending stars near the black hole’s sight-line outward.
 // Also adds an imperceptibly slow cosmic drift so the field never feels frozen.
 export const StarFieldMaterial = shaderMaterial(
-  { uTime: 0, uScroll: 0 },
+  { uTime: 0, uScroll: 0, uVelocity: 0 },
   /* vertex — lensing computed in view space so it’s always current per-frame */
   `
     uniform float uTime;
     uniform float uScroll;
+    uniform float uVelocity;
 
     void main() {
 
@@ -187,7 +198,7 @@ export const StarFieldMaterial = shaderMaterial(
 
       // Schwarzschild-inspired lensing: deflect stars near the BH sight-line outward.
       // Scroll intensifies lensing — spacetime distortion grows as user descends.
-      float lensMul = 1.0 + uScroll * 0.5; // up to 50% stronger at full scroll
+      float lensMul = 1.0 + uScroll * 0.5 + abs(uVelocity) * 0.4; // up to 50% stronger at full scroll + velocity spike
       if (dist > 0.3 && dist < 8.0) {
         float deflect = 1.1 * lensMul / dist;
         deflect       = min(deflect, 2.4);
