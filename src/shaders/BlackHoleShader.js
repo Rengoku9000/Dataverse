@@ -48,11 +48,17 @@ export const BlackHoleMaterial = shaderMaterial(
 
     void main() {
 
-      /* ── 1. TIME-DILATED ORBITAL SPEED ── */
+      /* ── 1. TIME-DILATED ORBITAL SPEED (scroll-reactive) ── */
       float normR    = (aRadius - uEventHorizonRadius) / 10.0;
       float timeW    = smoothstep(0.0, 1.0, normR);
-      /* Slightly faster than before: restores sense of motion */
-      float speed    = mix(0.012, 0.22, timeW) + aSpeedOffset * 0.025;
+      float baseSpeed = mix(0.012, 0.22, timeW) + aSpeedOffset * 0.025;
+
+      /* Scroll accelerates orbits: inner disk accelerates MORE than outer.
+         At full scroll, inner particles run ~2.5× faster, outer ~1.5×.
+         This creates the feeling of increasing gravitational pressure. */
+      float scrollAccel = 1.0 + uScroll * mix(1.5, 0.5, timeW);
+      float speed = baseSpeed * scrollAccel;
+
       float currAngle = aAngle - uTime * speed;
 
       /* ── 2. BASE DISK WITH ORBITAL INCLINATION + GRAVITATIONAL BREATHING ── */
@@ -71,7 +77,12 @@ export const BlackHoleMaterial = shaderMaterial(
 
       /* Tiny radial pulse (spacetime contracting/expanding feel) */
       float radialPulse = sin(uTime * 0.055 + seed * 2.3) * 0.055;
-      float r = aRadius + radialPulse;
+
+      /* Gravitational compression: scroll tightens orbits toward the event horizon.
+         At full scroll, orbits compress ~15% inward. Outer particles compress
+         more than inner (they have more room to fall). */
+      float scrollCompress = mix(1.0, 0.85, uScroll * smoothstep(0.0, 0.6, normR));
+      float r = (aRadius + radialPulse) * scrollCompress;
 
       /* Inclined orbit: Y component from inclination + Z slightly foreshortened */
       float sinI = sin(inclination);
@@ -100,9 +111,11 @@ export const BlackHoleMaterial = shaderMaterial(
         float n2  = noise2(vec2(aAngle * 0.9 + 11.1, aRadius * 0.57)) * 0.2 + 0.88;
         deflect  *= n1 * n2;
 
-        /* Stronger bend overall → more visual mass */
-        pos.y += deflect * uEventHorizonRadius * 3.8;
-        pos.z += deflect * uEventHorizonRadius * 0.7;
+        /* Lensing intensifies with scroll — spacetime bends harder.
+           At full scroll, lensing is 60% stronger. */
+        float lensingPower = 1.0 + uScroll * 0.6;
+        pos.y += deflect * uEventHorizonRadius * 3.8 * lensingPower;
+        pos.z += deflect * uEventHorizonRadius * 0.7 * lensingPower;
       }
 
       /* ── 4. CURSOR RIPPLE (heavy inertia, space-time elasticity) ── */
@@ -195,12 +208,15 @@ export const BlackHoleMaterial = shaderMaterial(
       float acc = sin(vAngle * 6.5 + 1.7) * cos(vDistance * 0.65);
       if (acc > 0.97) col = mix(col, uColorAccent, smoothstep(0.97, 1.0, acc) * 0.55);
 
-      /* Tight rim bloom */
+      /* Tight rim bloom — intensifies with scroll (event horizon energy buildup) */
       float rim = 1.0 - smoothstep(uEventHorizonRadius, uEventHorizonRadius + 0.6, vDistance);
-      col      += col * rim * 2.2;
+      float rimIntensity = 2.2 + uScroll * 1.8;  // up to 4.0 at full scroll
+      col += col * rim * rimIntensity;
 
-      /* Scroll cool-shift */
-      col = mix(col, uColorOuter * 0.45, uScroll * 0.25);
+      /* Scroll shifts inner particles HOTTER (whiter), not cooler.
+         Creates the feeling of increasing accretion energy. */
+      vec3 hotShift = mix(uColorMid, uColorInner, 0.6);
+      col = mix(col, hotShift, uScroll * 0.15 * (1.0 - smoothstep(0.0, 0.5, vDistance / uEventHorizonRadius)));
 
       gl_FragColor = vec4(col, vAlpha * alpha);
     }

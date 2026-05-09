@@ -4,7 +4,7 @@ import * as THREE from 'three';
 // ─── Photon Ring Shader ──────────────────────────────────────────────────────
 // Three independent noise layers — "feels organic" vs "mathematically generated"
 export const PhotonRingMaterial = shaderMaterial(
-  { uTime: 0 },
+  { uTime: 0, uScroll: 0 },
   /* vertex */
   `
     varying float vAngle;
@@ -17,6 +17,7 @@ export const PhotonRingMaterial = shaderMaterial(
   /* fragment */
   `
     uniform float uTime;
+    uniform float uScroll;
     varying float vAngle;
 
     // Two independent hash functions to prevent pattern repetition
@@ -43,7 +44,14 @@ export const PhotonRingMaterial = shaderMaterial(
                   + (hash2(angBin * 1.3 + tBin * 43.7) - 0.5) * 0.03;
 
       float brightness = 0.82 + L1 + L2 + micro;
-      brightness = clamp(brightness, 0.55, 1.18); // prevent clipping either way
+
+      /* Scroll-reactive turbulence: as the user scrolls deeper,
+         micro-instability grows and base brightness increases.
+         Simulates the ring destabilising under increasing gravitational stress. */
+      float scrollEnergy = 1.0 + uScroll * 0.35;  // up to 35% brighter
+      float scrollTurb   = 1.0 + uScroll * 2.5;   // turbulence amplitude 2.5×
+      brightness = brightness * scrollEnergy + micro * scrollTurb;
+      brightness = clamp(brightness, 0.50, 1.5);
 
       // ── Relativistic Doppler + Interstellar bottom-brightening ──
       // In Interstellar, the bottom of the disk is brighter due to relativistic beaming.
@@ -148,10 +156,11 @@ export const HazeMaterial = shaderMaterial(
 // starfield, bending stars near the black hole’s sight-line outward.
 // Also adds an imperceptibly slow cosmic drift so the field never feels frozen.
 export const StarFieldMaterial = shaderMaterial(
-  { uTime: 0 },
+  { uTime: 0, uScroll: 0 },
   /* vertex — lensing computed in view space so it’s always current per-frame */
   `
     uniform float uTime;
+    uniform float uScroll;
 
     void main() {
 
@@ -177,10 +186,11 @@ export const StarFieldMaterial = shaderMaterial(
       float dist  = length(offset);
 
       // Schwarzschild-inspired lensing: deflect stars near the BH sight-line outward.
-      // Reduced deflection to match the 40% smaller visual BH size.
+      // Scroll intensifies lensing — spacetime distortion grows as user descends.
+      float lensMul = 1.0 + uScroll * 0.5; // up to 50% stronger at full scroll
       if (dist > 0.3 && dist < 8.0) {
-        float deflect = 1.1 / dist;          // ~Schwarzschild 1/b, scaled down
-        deflect       = min(deflect, 1.8);   // cap
+        float deflect = 1.1 * lensMul / dist;
+        deflect       = min(deflect, 2.4);
         starView.xy  += normalize(offset) * deflect;
       }
 

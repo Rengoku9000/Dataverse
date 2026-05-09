@@ -10,7 +10,7 @@ extend({ BlackHoleMaterial, PhotonRingMaterial, HazeMaterial, StarFieldMaterial 
 /* ── Starfield with Gravitational Lensing ──────────────────────────────────
    Background stars that appear to bend around the black hole sight-line,
    plus an imperceptibly slow cosmic drift so the field never feels frozen.   */
-function StarField() {
+function StarField({ scrollProgress }) {
   const matRef = useRef();
   const COUNT  = 1800;
 
@@ -26,6 +26,14 @@ function StarField() {
     }
     return arr;
   }, []);
+
+  useEffect(() => {
+    if (!scrollProgress) return;
+    const unsub = scrollProgress.on('change', v => {
+      if (matRef.current) matRef.current.uScroll = v;
+    });
+    return () => unsub();
+  }, [scrollProgress]);
 
   // Tick uTime — drives the slow drift + lensing is auto-updated via viewMatrix
   useFrame(({ clock }) => {
@@ -53,6 +61,7 @@ function GravitationalHaze({ scrollProgress }) {
   const matRef = useRef();
 
   useEffect(() => {
+    if (!scrollProgress) return;
     const unsub = scrollProgress.on('change', v => {
       if (matRef.current) matRef.current.uScroll = v;
     });
@@ -110,10 +119,19 @@ function EventHorizon() {
 /* ── Photon Sphere ──────────────────────────────────────────────────────────
    Non-uniform glowing ring using the PhotonRingMaterial shader.
    Two rings: a razor inner (bright) and a soft outer halo (dim).             */
-function PhotonSphere() {
+function PhotonSphere({ scrollProgress }) {
   const innerRef = useRef();
   const outerRef = useRef();
   const hazeRef  = useRef();
+
+  useEffect(() => {
+    if (!scrollProgress) return;
+    const unsub = scrollProgress.on('change', v => {
+      if (innerRef.current) innerRef.current.material.uScroll = v;
+      if (outerRef.current) outerRef.current.material.uScroll = v;
+    });
+    return () => unsub();
+  }, [scrollProgress]);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
@@ -235,39 +253,50 @@ function AccretionLayer({ count, sizeMultiplier, radiusRange, densityExp, scroll
    The black hole should feel DISTANT and massive, not close to the camera.
    Wider screens → camera pulls aggressively further back.
    Uses smooth lerp so the transition feels gravitational, not jumpy.        */
-function AdaptiveCamera() {
+function AdaptiveCamera({ scrollProgress }) {
   const { camera, size } = useThree();
+  const scrollRef = useRef(0);
 
+  // Smooth out the scroll value so camera movements don't jerk
   useFrame(() => {
+    // Spring physics: current + (target - current) * stiffness
+    scrollRef.current += (scrollProgress - scrollRef.current) * 0.05;
+    const smoothScroll = scrollRef.current;
+
     const aspect = size.width / size.height;
 
     // Base Z for a standard 16:9 screen — much further back than before
     const baseZ = 58;
 
-    // Aspect ratio scaling — aggressive pullback on wide screens:
-    // - ultrawide (21:9, aspect ≈ 2.33): push WAY further back
-    // - standard (16:9, aspect ≈ 1.78): baseZ ≈ 58
-    // - tablet (4:3, aspect ≈ 1.33): slightly closer
-    // - mobile portrait (9:16, aspect ≈ 0.56): closer but still spacious
+    // Aspect ratio scaling
     let targetZ;
     if (aspect >= 2.0) {
-      // Ultrawide: aggressive pullback — +15 units per aspect unit beyond 2.0
       targetZ = baseZ + (aspect - 2.0) * 15;
     } else if (aspect >= 1.2) {
-      // Desktop/laptop range: smooth interpolation
       targetZ = baseZ + (aspect - 1.78) * 8;
     } else {
-      // Tablet portrait / mobile: pull closer but floor at 38
       targetZ = baseZ - (1.2 - aspect) * 12;
       targetZ = Math.max(targetZ, 38);
     }
 
+    // SCROLL EFFECT: As user scrolls down, pull camera forward and slightly down
+    // This creates the feeling of falling into the gravity well.
+    // targetZ reduces by up to 15 units at full scroll.
+    const scrollZOffset = smoothScroll * 15.0;
+    // targetY dips by up to 3 units at full scroll.
+    const scrollYOffset = smoothScroll * 3.0;
+
+    targetZ -= scrollZOffset;
+
     // Smooth gravitational lerp — no jumps on resize
     camera.position.z += (targetZ - camera.position.z) * 0.08;
 
-    // Keep XY fixed for consistent framing
+    // Keep X fixed
     camera.position.x = 0;
-    camera.position.y = 2.0;
+
+    // Smooth Y descent
+    const targetY = 2.0 - scrollYOffset;
+    camera.position.y += (targetY - camera.position.y) * 0.08;
 
     camera.updateProjectionMatrix();
   });
@@ -287,10 +316,10 @@ export default function BackgroundParticles({ scrollProgress, isMobile }) {
         <color attach="background" args={['#010104']} />
 
         {/* Responsive camera controller */}
-        <AdaptiveCamera />
+        <AdaptiveCamera scrollProgress={scrollProgress} />
 
         {/* Cosmic starfield — vast and quiet feeling (NOT affected by group scale) */}
-        <StarField />
+        <StarField scrollProgress={scrollProgress} />
 
         {/* All black hole geometry scaled down 40% — occupies ~25-30% of viewport.
             The scale prop reduces ALL child geometry proportionally without
@@ -308,7 +337,7 @@ export default function BackgroundParticles({ scrollProgress, isMobile }) {
           <EventHorizonEdge />
 
           {/* Glowing photon ring with brightness asymmetry */}
-          <PhotonSphere />
+          <PhotonSphere scrollProgress={scrollProgress} />
 
           {/* ── Three particle depth layers ── */}
 
