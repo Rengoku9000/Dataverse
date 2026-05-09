@@ -284,6 +284,8 @@ function AdaptiveCamera({ scrollProgress }) {
     timeRef.current += delta;
     const t = timeRef.current;
 
+    const aspect = size.width / size.height;
+
     // Base Z for the frontal view (scroll = 1.0)
     const baseZ = 58;
 
